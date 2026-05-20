@@ -1,0 +1,319 @@
+openapi: 3.0.3
+info:
+  title: TaskFlow REST API
+  description: |
+    A scalable REST API with JWT authentication, role-based access control, and full task management.
+    
+    ## Authentication
+    Use `/auth/login` to get an access token, then click **Authorize** and enter: `Bearer <your_token>`
+    
+    ## Roles
+    - **user**: Can manage own tasks, view own profile
+    - **admin**: Full access to all resources
+    
+    ## Test Credentials
+    - Admin: `admin@taskflow.com` / `Admin@123`
+  version: 1.0.0
+  contact:
+    name: TaskFlow API
+servers:
+  - url: http://localhost:5000/api/v1
+    description: Local Development
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        email: { type: string, format: email }
+        role: { type: string, enum: [user, admin] }
+        created_at: { type: string, format: date-time }
+
+    Task:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: string }
+        status: { type: string, enum: [pending, in_progress, completed, cancelled] }
+        priority: { type: string, enum: [low, medium, high] }
+        due_date: { type: string, format: date-time, nullable: true }
+        user_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    Tokens:
+      type: object
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        expiresIn: { type: string, example: '15m' }
+
+    Error:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        error: { type: string }
+
+paths:
+  /auth/register:
+    post:
+      tags: [Authentication]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name: { type: string, example: John Doe }
+                email: { type: string, example: john@example.com }
+                password: { type: string, example: 'Password@123' }
+      responses:
+        '201':
+          description: User registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      user: { $ref: '#/components/schemas/User' }
+                      tokens: { $ref: '#/components/schemas/Tokens' }
+        '409': { description: Email already exists }
+        '422': { description: Validation error }
+
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: Login with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, example: admin@taskflow.com }
+                password: { type: string, example: 'Admin@123' }
+      responses:
+        '200': { description: Login successful }
+        '401': { description: Invalid credentials }
+
+  /auth/me:
+    get:
+      tags: [Authentication]
+      summary: Get current user profile
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200': { description: Current user }
+        '401': { description: Unauthorized }
+
+  /auth/refresh:
+    post:
+      tags: [Authentication]
+      summary: Refresh access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200': { description: New tokens issued }
+
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Logout (revoke refresh token)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200': { description: Logged out }
+
+  /tasks:
+    get:
+      tags: [Tasks]
+      summary: Get tasks (own tasks for user, all for admin)
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [pending, in_progress, completed, cancelled] }
+        - in: query
+          name: priority
+          schema: { type: string, enum: [low, medium, high] }
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 10 }
+      responses:
+        '200': { description: List of tasks with pagination }
+
+    post:
+      tags: [Tasks]
+      summary: Create a new task
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string, example: 'Design database schema' }
+                description: { type: string }
+                status: { type: string, enum: [pending, in_progress, completed, cancelled] }
+                priority: { type: string, enum: [low, medium, high] }
+                due_date: { type: string, format: date-time }
+      responses:
+        '201': { description: Task created }
+
+  /tasks/{id}:
+    get:
+      tags: [Tasks]
+      summary: Get task by ID
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Task found }
+        '403': { description: Forbidden }
+        '404': { description: Task not found }
+
+    put:
+      tags: [Tasks]
+      summary: Update a task
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                description: { type: string }
+                status: { type: string }
+                priority: { type: string }
+      responses:
+        '200': { description: Task updated }
+
+    delete:
+      tags: [Tasks]
+      summary: Delete a task
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Task deleted }
+
+  /tasks/{id}/status:
+    patch:
+      tags: [Tasks]
+      summary: Quick status update
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: string, enum: [pending, in_progress, completed, cancelled] }
+      responses:
+        '200': { description: Status updated }
+
+  /users:
+    get:
+      tags: [Users (Admin)]
+      summary: Get all users (admin only)
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200': { description: List of users }
+        '403': { description: Admin only }
+
+  /users/{id}:
+    get:
+      tags: [Users (Admin)]
+      summary: Get user by ID
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: User found }
+
+  /users/{id}/role:
+    put:
+      tags: [Users (Admin)]
+      summary: Update user role (admin only)
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role: { type: string, enum: [user, admin] }
+      responses:
+        '200': { description: Role updated }
+
+  /users/{id}:
+    delete:
+      tags: [Users (Admin)]
+      summary: Delete user (admin only)
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: User deleted }
